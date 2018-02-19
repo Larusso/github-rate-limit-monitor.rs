@@ -16,12 +16,17 @@ extern crate failure;
 use std::io::{self, Write};
 use futures::{Future, Stream};
 use hyper::Client;
-use hyper::header::UserAgent;
+use hyper::header::{Headers, Authorization, UserAgent, Bearer};
 use hyper_tls::HttpsConnector;
 use tokio_core::reactor::Core;
 use serde_json::Value;
 use failure::Error;
+use std::fmt;
 
+//Progressbar
+extern crate indicatif;
+use indicatif::ProgressBar;
+use indicatif::ProgressStyle;
 
 const USAGE: &'static str = "
 grlm - github rate limit monitor
@@ -42,9 +47,9 @@ Options:
 
 #[derive(Debug, Deserialize)]
 struct Args {
-    flag_login: Vec<String>,
-    flag_password: Vec<String>,
-    flag_access_token: Vec<String>,
+    flag_login: String,
+    flag_password: String,
+    flag_access_token: String,
     flag_frequency: u64,
     flag_version: bool
 }
@@ -66,9 +71,9 @@ struct GithubRateLimit {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct RateLimit {
-    limit: u32,
-    remaining: u32,
-    reset: u32
+    limit: u64,
+    remaining: u64,
+    reset: u64
 }
 
 fn main() {
@@ -80,7 +85,7 @@ fn main() {
     let args: Args = Docopt::new(USAGE)
                             .and_then(|d| d.deserialize())
                             .unwrap_or_else(|e| e.exit());
-    println!("{:?}", args);
+    //println!("{:?}", args);
 
     if args.flag_version {
         println!("{:?}",version);
@@ -89,7 +94,7 @@ fn main() {
     }
 }
 
-fn fetch_rate_limit() -> Result<RateLimitResult> {
+fn fetch_rate_limit(token : &String ) -> Result<RateLimitResult> {
     let mut core = Core::new()?;
     let handle = core.handle();
     let client = Client::configure()
@@ -99,8 +104,12 @@ fn fetch_rate_limit() -> Result<RateLimitResult> {
     let uri = "https://api.github.com/rate_limit".parse()?;
 
     let mut req = hyper::Request::new(hyper::Method::Get, uri);
+    req.headers_mut().set(Authorization(
+       Bearer {
+           token: token.to_owned()
+       }
+    ));
     req.headers_mut().set(UserAgent::new("curl/7.54.0"));
-
 
     let work = client.request(req).and_then(|res| {
         res.body().concat2().and_then(move |body| {
@@ -110,8 +119,8 @@ fn fetch_rate_limit() -> Result<RateLimitResult> {
                     e
                 )
             })?;
-
-            return Ok(v)
+            //println!("{:?}", v);
+            Ok(v)
         })
     });
     let result = core.run(work)?;
@@ -120,10 +129,21 @@ fn fetch_rate_limit() -> Result<RateLimitResult> {
 
 fn monitor(ref args : Args) {
     let f = args.flag_frequency;
+    let bar = ProgressBar::new(5000);
+    bar.set_style(ProgressStyle::default_bar()
+    //.template(&format!("{{prefix:.bold}}▕{{bar:.{}}}▏{{msg}}", "yellow"))
+    .progress_chars("█▛▌▖  "));
+    // bar.set_style(ProgressStyle::default_bar()
+    // .template(&format!("{{prefix:.bold}}▕{{bar:.{}}}▏{{msg}}", "yellow"))
+
+    bar.set_prefix("Requests");
+
     loop {
-        println!("minitor github");
-        let r = fetch_rate_limit();
-        println!("{:?}", r);
+        match fetch_rate_limit(&args.flag_access_token) {
+            Ok(r) => bar.set_position(r.rate.limit - r.rate.remaining),
+            Err(e) => println!("Error {}", e),
+        }
+        //
         let ten_millis = time::Duration::from_secs(f);
         thread::sleep(ten_millis)
     }
