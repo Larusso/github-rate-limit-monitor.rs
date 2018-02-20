@@ -127,22 +127,47 @@ fn fetch_rate_limit(token : &String ) -> Result<RateLimitResult> {
     Ok(result)
 }
 
+fn fetch_rate_limit_fake(counter: &u64) -> Result<RateLimitResult> {
+    let rem = match 5000 - counter * 34 {
+        n @ 0 ... 5000 => n,
+        _ => 0,
+    };
+
+    let resources = GithubRateLimit {
+                                        core: RateLimit {limit: 5000, remaining: rem, reset: 0},
+                                        graphql: RateLimit {limit: 5000, remaining: rem, reset: 0},
+                                        search: RateLimit {limit: 5000, remaining: rem, reset: 0}
+                                    };
+
+    let r = RateLimitResult {rate: RateLimit {limit: 5000, remaining: rem, reset: 0}, resources: resources};
+    Ok(r)
+}
+
 fn monitor(ref args : Args) {
     let f = args.flag_frequency;
     let bar = ProgressBar::new(5000);
     bar.set_style(ProgressStyle::default_bar()
-    //.template(&format!("{{prefix:.bold}}▕{{bar:.{}}}▏{{msg}}", "yellow"))
-    .progress_chars("█▛▌▖  "));
-    // bar.set_style(ProgressStyle::default_bar()
-    // .template(&format!("{{prefix:.bold}}▕{{bar:.{}}}▏{{msg}}", "yellow"))
+    .template(&format!("{{prefix:.bold}} {{pos}} {{wide_bar:.{}}} of {{len}}", "yellow"))
+    .progress_chars(" \u{15E7}\u{FF65}"));
 
     bar.set_prefix("Requests");
-
+    let mut counter = 0;
     loop {
         match fetch_rate_limit(&args.flag_access_token) {
-            Ok(r) => bar.set_position(r.rate.limit - r.rate.remaining),
+            Ok(r) => {
+                let rate_color = match (r.rate.remaining as f64) / (r.rate.limit as f64) {
+                    x if x <= 0.08 => "red",
+                    x if x <= 0.5 => "yellow",
+                    _ => "green"
+                };
+                bar.set_style(ProgressStyle::default_bar()
+                .template(&format!("{{prefix:.bold}} {{pos:.{}}} {{wide_bar:.{}}} of {{len}}", rate_color, "yellow"))
+                .progress_chars(" \u{15E7}\u{FF65}"));
+                bar.set_position(r.rate.limit - r.rate.remaining);
+            },
             Err(e) => println!("Error {}", e),
         }
+        counter += 1;
         //
         let ten_millis = time::Duration::from_secs(f);
         thread::sleep(ten_millis)
