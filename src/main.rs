@@ -22,6 +22,7 @@ use tokio_core::reactor::Core;
 use serde_json::Value;
 use failure::Error;
 use std::fmt;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 //Progressbar
 extern crate indicatif;
@@ -74,6 +75,41 @@ struct RateLimit {
     limit: u64,
     remaining: u64,
     reset: u64
+}
+
+struct Minutes(i64);
+
+impl fmt::Display for Minutes {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+struct Seconds(i64);
+
+impl fmt::Display for Seconds {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl Seconds {
+    pub fn to_minutes(&self) -> Minutes {
+        Minutes(self.0 / 60)
+    }
+}
+
+impl Minutes {
+    pub fn to_seconds(&self) -> Seconds {
+        Seconds(self.0 * 60)
+    }
+}
+
+impl RateLimit {
+    pub fn resets_in(&self) -> i64 {
+        let utc_secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+        self.reset as i64 - utc_secs
+    }
 }
 
 fn main() {
@@ -147,7 +183,7 @@ fn monitor(ref args : Args) {
     let f = args.flag_frequency;
     let bar = ProgressBar::new(5000);
     bar.set_style(ProgressStyle::default_bar()
-    .template(&format!("{{prefix:.bold}} {{pos}} {{wide_bar:.{}}} of {{len}}", "yellow"))
+    .template(&format!("{{prefix:.bold}} {{pos}} {{wide_bar:.{}}} of {{len}} {{msg.{}}} ", "yellow", "yellow"))
     .progress_chars(" \u{15E7}\u{FF65}"));
 
     bar.set_prefix("Requests");
@@ -160,8 +196,15 @@ fn monitor(ref args : Args) {
                     x if x <= 0.5 => "yellow",
                     _ => "green"
                 };
+
+                let message_color = match r.rate.resets_in() {
+                    x if x < 120 => "green",
+                    _ => "white"
+                };
+
+                bar.set_message(&format!("{}",r.rate.resets_in()));
                 bar.set_style(ProgressStyle::default_bar()
-                .template(&format!("{{prefix:.bold}} {{pos:.{}}} {{wide_bar:.{}}} of {{len}}", rate_color, "yellow"))
+                .template(&format!("{{prefix:.bold}} {{pos:.{}}} {{wide_bar:.{}}} of {{len}} resets in {{msg:.{}}} ", rate_color, "yellow", message_color))
                 .progress_chars(" \u{15E7}\u{FF65}"));
                 bar.set_position(r.rate.limit - r.rate.remaining);
             },
