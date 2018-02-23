@@ -16,7 +16,7 @@ extern crate failure;
 use std::io::{self, Write};
 use futures::{Future, Stream};
 use hyper::Client;
-use hyper::header::{Headers, Authorization, UserAgent, Bearer};
+use hyper::header::{Headers, Authorization, UserAgent, Bearer, Basic};
 use hyper_tls::HttpsConnector;
 use tokio_core::reactor::Core;
 use serde_json::Value;
@@ -33,7 +33,7 @@ const USAGE: &'static str = "
 grlm - github rate limit monitor
 
 Usage:
-  grlm (-l <user> -p <password> | -t <token>) [-f <frequency>]
+  grlm [(-l <user> -p <password> | -t <token>)] [-f <frequency>]
   grlm --version
   grlm -h | --help
 
@@ -53,6 +53,33 @@ struct Args {
     flag_access_token: String,
     flag_frequency: u64,
     flag_version: bool
+}
+
+impl Args {
+    fn to_arguments(&self) -> Arguments {
+        if !self.flag_access_token.is_empty() {
+            Arguments {frequency: self.flag_frequency, auth: AuthType::Token(self.flag_access_token.clone())}
+        }
+        else if !self.flag_login.is_empty() {
+            Arguments {frequency: self.flag_frequency, auth: AuthType::Login {login: self.flag_login.clone(), password: self.flag_password.clone()}}
+        }
+        else {
+            Arguments {frequency: self.flag_frequency, auth: AuthType::Anonymos}
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Arguments {
+    frequency: u64,
+    auth: AuthType
+}
+
+#[derive(Debug)]
+enum AuthType {
+    Anonymos,
+    Token(String),
+    Login { login: String, password: String }
 }
 
 type Result<T> = std::result::Result<T, failure::Error>;
@@ -126,11 +153,11 @@ fn main() {
     if args.flag_version {
         println!("{:?}",version);
     } else {
-        monitor(args)
+        monitor(args.to_arguments())
     }
 }
 
-fn fetch_rate_limit(token : &String ) -> Result<RateLimitResult> {
+fn fetch_rate_limit(auth : &AuthType ) -> Result<RateLimitResult> {
     let mut core = Core::new()?;
     let handle = core.handle();
     let client = Client::configure()
@@ -140,11 +167,15 @@ fn fetch_rate_limit(token : &String ) -> Result<RateLimitResult> {
     let uri = "https://api.github.com/rate_limit".parse()?;
 
     let mut req = hyper::Request::new(hyper::Method::Get, uri);
-    req.headers_mut().set(Authorization(
-       Bearer {
-           token: token.to_owned()
-       }
-    ));
+
+    if let &AuthType::Token(ref token) = auth {
+        req.headers_mut().set(Authorization(Bearer {token: token.to_owned()}));
+    }
+
+    if let &AuthType::Login {ref login, ref password} = auth {
+        req.headers_mut().set(Authorization(Basic { username: login.to_owned(), password: Some(password.to_owned())}));
+    }
+
     req.headers_mut().set(UserAgent::new("curl/7.54.0"));
 
     let work = client.request(req).and_then(|res| {
@@ -179,9 +210,14 @@ fn fetch_rate_limit_fake(counter: &u64) -> Result<RateLimitResult> {
     Ok(r)
 }
 
-fn monitor(ref args : Args) {
-    let f = args.flag_frequency;
-    let bar = ProgressBar::new(5000);
+fn monitor(ref args : Arguments) {
+    let f = args.frequency;
+    let initial_length = match args.auth {
+        AuthType::Anonymos => 60,
+        _ => 5000,
+    };
+
+    let bar = ProgressBar::new(initial_length);
     bar.set_style(ProgressStyle::default_bar()
     .template(&format!("{{prefix:.bold}} {{pos}} {{wide_bar:.{}}} of {{len}} {{msg.{}}} ", "yellow", "yellow"))
     .progress_chars(" \u{15E7}\u{FF65}"));
@@ -189,7 +225,7 @@ fn monitor(ref args : Args) {
     bar.set_prefix("Requests");
     let mut counter = 0;
     loop {
-        match fetch_rate_limit(&args.flag_access_token) {
+        match fetch_rate_limit(&args.auth) {
             Ok(r) => {
                 let rate_color = match (r.rate.remaining as f64) / (r.rate.limit as f64) {
                     x if x <= 0.08 => "red",
@@ -201,7 +237,7 @@ fn monitor(ref args : Args) {
                     x if x < 120 => "green",
                     _ => "white"
                 };
-
+                bar.set_length(r.rate.limit);
                 bar.set_message(&format!("{}",r.rate.resets_in()));
                 bar.set_style(ProgressStyle::default_bar()
                 .template(&format!("{{prefix:.bold}} {{pos:.{}}} {{wide_bar:.{}}} of {{len}} resets in {{msg:.{}}} ", rate_color, "yellow", message_color))
