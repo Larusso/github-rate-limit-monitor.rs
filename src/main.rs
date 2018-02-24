@@ -1,36 +1,27 @@
 #[macro_use]
-//Docop
 extern crate serde_derive;
 extern crate serde_json;
 extern crate docopt;
-
-use docopt::Docopt;
-use std::{thread, time};
-use std::time::{Duration, Instant};
-
-//Hyper
 extern crate futures;
 extern crate hyper;
 extern crate hyper_tls;
 extern crate tokio_core;
 extern crate failure;
-use std::io::{self, Write};
-use futures::{Future, Stream};
-use hyper::Client;
-use hyper::header::{Headers, Authorization, UserAgent, Bearer, Basic};
-use hyper_tls::HttpsConnector;
-use tokio_core::reactor::Core;
-use serde_json::Value;
-use failure::Error;
+extern crate indicatif;
 
-use std::fmt;
-use std::time::{SystemTime, UNIX_EPOCH};
+use docopt::Docopt;
+use std::{thread, time};
+use std::time::{Duration, Instant};
 
 //Progressbar
-extern crate indicatif;
+
 use indicatif::ProgressDrawTarget;
 use indicatif::ProgressBar;
 use indicatif::ProgressStyle;
+
+mod grlm;
+
+use grlm::{AuthType, RateLimitResult, GithubRateLimit, RateLimit};
 
 const USAGE: &'static str = "
 grlm - github rate limit monitor
@@ -41,12 +32,12 @@ Usage:
   grlm -h | --help
 
 Options:
--l <user>, --login <user>                the github username
--p <password>, --password <password>     the user password
--t <token>, --access-token <token>        an github accesstoken
--f <frequency>, --frequency <frequency>  refresh freqency [default: 10]
--V, --version                            print version
--h, --help                               show this help message and exit
+  -l <user>, --login <user>                the github username
+  -p <password>, --password <password>     the user password
+  -t <token>, --access-token <token>       an github accesstoken
+  -f <frequency>, --frequency <frequency>  refresh freqency [default: 10]
+  -V, --version                            print version
+  -h, --help                               show this help message and exit
 ";
 
 #[derive(Debug, Deserialize)]
@@ -78,139 +69,22 @@ struct Arguments {
     auth: AuthType
 }
 
-#[derive(Debug)]
-enum AuthType {
-    Anonymos,
-    Token(String),
-    Login { login: String, password: String }
-}
-
-type Result<T> = std::result::Result<T, failure::Error>;
-
-#[derive(Serialize, Deserialize, Debug)]
-struct RateLimitResult {
-    resources: GithubRateLimit,
-    rate: RateLimit
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct GithubRateLimit {
-    core: RateLimit,
-    search: RateLimit,
-    graphql: RateLimit
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct RateLimit {
-    limit: u64,
-    remaining: u64,
-    reset: u64
-}
-
-struct Minutes(i64);
-
-impl fmt::Display for Minutes {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-struct Seconds(i64);
-
-impl fmt::Display for Seconds {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl Seconds {
-    pub fn to_minutes(&self) -> Minutes {
-        Minutes(self.0 / 60)
-    }
-}
-
-impl Minutes {
-    pub fn to_seconds(&self) -> Seconds {
-        Seconds(self.0 * 60)
-    }
-}
-
-impl RateLimit {
-    pub fn resets_in(&self) -> i64 {
-        let utc_secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
-        self.reset as i64 - utc_secs
-    }
-}
-
 fn main() {
     let version = format!("{}.{}.{}{}",
                      env!("CARGO_PKG_VERSION_MAJOR"),
                      env!("CARGO_PKG_VERSION_MINOR"),
                      env!("CARGO_PKG_VERSION_PATCH"),
                      option_env!("CARGO_PKG_VERSION_PRE").unwrap_or(""));
+
     let args: Args = Docopt::new(USAGE)
-                            .and_then(|d| d.deserialize())
-                            .unwrap_or_else(|e| e.exit());
-    //println!("{:?}", args);
+                      .and_then(|d| d.deserialize())
+                      .unwrap_or_else(|e| e.exit());
 
     if args.flag_version {
-        println!("{:?}",version);
+        println!("grlm {}",version);
     } else {
         monitor(args.to_arguments())
     }
-}
-
-fn fetch_rate_limit(auth : &AuthType ) -> Result<RateLimitResult> {
-    let mut core = Core::new()?;
-    let handle = core.handle();
-    let client = Client::configure()
-                 .connector(HttpsConnector::new(4, &handle)?)
-                 .build(&handle);
-
-    let uri = "https://api.github.com/rate_limit".parse()?;
-
-    let mut req = hyper::Request::new(hyper::Method::Get, uri);
-
-    if let &AuthType::Token(ref token) = auth {
-        req.headers_mut().set(Authorization(Bearer {token: token.to_owned()}));
-    }
-
-    if let &AuthType::Login {ref login, ref password} = auth {
-        req.headers_mut().set(Authorization(Basic { username: login.to_owned(), password: Some(password.to_owned())}));
-    }
-
-    req.headers_mut().set(UserAgent::new("curl/7.54.0"));
-
-    let work = client.request(req).and_then(|res| {
-        res.body().concat2().and_then(move |body| {
-            let v: RateLimitResult = serde_json::from_slice(&body).map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    e
-                )
-            })?;
-            //println!("{:?}", v);
-            Ok(v)
-        })
-    });
-    let result = core.run(work)?;
-    Ok(result)
-}
-
-fn fetch_rate_limit_fake(counter: &u64) -> Result<RateLimitResult> {
-    let rem = match 5000 - counter * 34 {
-        n @ 0 ... 5000 => n,
-        _ => 0,
-    };
-
-    let resources = GithubRateLimit {
-                                        core: RateLimit {limit: 5000, remaining: rem, reset: 0},
-                                        graphql: RateLimit {limit: 5000, remaining: rem, reset: 0},
-                                        search: RateLimit {limit: 5000, remaining: rem, reset: 0}
-                                    };
-
-    let r = RateLimitResult {rate: RateLimit {limit: 5000, remaining: rem, reset: 0}, resources: resources};
-    Ok(r)
 }
 
 fn monitor(ref args : Arguments) {
@@ -233,7 +107,7 @@ fn monitor(ref args : Arguments) {
     loop {
         if first_run || instant.elapsed() >= tick
         {
-            match fetch_rate_limit(&args.auth) {
+            match grlm::fetch_rate_limit(&args.auth) {
                 Ok(r) => {
                     //println!("{:?}", r);
                     let rate_color = match (r.rate.remaining as f64) / (r.rate.limit as f64) {
