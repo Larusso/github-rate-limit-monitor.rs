@@ -8,6 +8,8 @@ extern crate hyper_tls;
 extern crate tokio_core;
 extern crate failure;
 extern crate indicatif;
+extern crate parking_lot;
+
 
 mod grlm;
 
@@ -31,6 +33,6 @@ Options:
 fn main() {
     let options = grlm::cli::get_options(USAGE);
     if let Some(o) = options {
-        grlm::monitor(o);
+        grlm::Monitor::start(o);
     }
 }

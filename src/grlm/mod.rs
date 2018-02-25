@@ -2,61 +2,107 @@ mod github;
 
 pub mod cli;
 
-pub use self::github::{AuthType, RateLimitResult, GithubRateLimit, RateLimit, fetch_rate_limit};
+use self::github::{AuthType, RateLimitResult, fetch_rate_limit};
 
-use indicatif::ProgressDrawTarget;
 use indicatif::ProgressBar;
+use indicatif::ProgressDrawTarget;
 use indicatif::ProgressStyle;
+
+use parking_lot::{RwLock};
+
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-pub fn monitor(ref args : cli::Options) {
-    let f = args.frequency;
-    let initial_length = match args.auth {
-        AuthType::Anonymos => 60,
-        _ => 5000,
-    };
+struct MonitorState {
+    bar: ProgressBar,
+    rate_limit: Option<RateLimitResult>,
+    poll_frequency: u64,
+    auth: AuthType,
+}
 
-    let bar = ProgressBar::new(initial_length);
-    bar.set_draw_target(ProgressDrawTarget::stderr_nohz());
-    bar.set_style(ProgressStyle::default_bar()
-    .template(&format!("{{prefix:.bold}} {{pos}} {{wide_bar:.{}}} of {{len}} {{msg.{}}} ", "yellow", "yellow"))
-    .progress_chars(" \u{15E7}\u{FF65}"));
+pub struct Monitor {
+    state: Arc<RwLock<MonitorState>>,
+}
 
-    bar.set_prefix("Requests");
-    let tick = Duration::from_secs(f);
-    let mut instant = Instant::now();
-    let mut first_run = true;
-    loop {
-        if first_run || instant.elapsed() >= tick
-        {
-            match fetch_rate_limit(&args.auth) {
-                Ok(r) => {
-                    //println!("{:?}", r);
-                    let rate_color = match (r.rate.remaining as f64) / (r.rate.limit as f64) {
-                        x if x <= 0.08 => "red",
-                        x if x <= 0.5 => "yellow",
-                        _ => "green"
-                    };
+impl Monitor {
+    fn new(args : cli::Options) -> Monitor {
+        let f = args.frequency;
+        let auth = args.auth;
+        let initial_length = match auth {
+            AuthType::Anonymos => 60,
+            _ => 5000,
+        };
+        let bar = ProgressBar::new(initial_length);
+        bar.set_draw_target(ProgressDrawTarget::stderr_nohz());
+        bar.set_style(ProgressStyle::default_bar()
+            .template(&format!("{{prefix:.bold}} {{pos}} {{wide_bar:.{}}} of {{len}} {{msg.{}}} ", "yellow", "yellow"))
+            .progress_chars(" \u{15E7}\u{FF65}"));
 
-                    let message_color = match r.rate.resets_in() {
-                        x if x < 120 => "green",
-                        _ => "white"
-                    };
-
-                    bar.set_length(r.rate.limit);
-                    bar.set_message(&format!("{}",r.rate.resets_in()));
-                    bar.set_style(ProgressStyle::default_bar()
-                        .template(&format!("{{prefix:.bold}} {{pos:.{}}} {{wide_bar:.{}}} of {{len}} resets in {{msg:.{}}} ", rate_color, "yellow", message_color))
-                        .progress_chars(" \u{15E7}\u{FF65}"));
-                    bar.set_position(r.rate.limit - r.rate.remaining);
-                },
-                Err(e) => println!("Error {}", e),
-            }
-            instant = Instant::now();
+        bar.set_prefix("Requests");
+        Monitor {
+            state: Arc::new(RwLock::new(MonitorState {
+                bar: bar,
+                rate_limit: None,
+                poll_frequency: f,
+                auth: auth,
+            })),
         }
-        first_run = false;
+    }
 
-        // let ten_millis = time::Duration::from_millis(10);
-        // thread::sleep(ten_millis)
+    pub fn start_ticker(&self) {
+        let tick = Duration::from_secs(self.state.read().poll_frequency);
+        let mut instant = Instant::now();
+        let mut first_run = true;
+        loop {
+            if first_run || instant.elapsed() >= tick
+            {
+                first_run = false;
+                let mut state = self.state.write();
+                match fetch_rate_limit(&state.auth) {
+                    Ok(r) => state.rate_limit = Some(r),
+                    Err(e) => println!("Error {}", e),
+                }
+                instant = Instant::now();
+            }
+            if let Some(ref r) = self.state.read().rate_limit {
+                let ref bar = self.state.read().bar;
+                bar.set_length(r.rate.limit);
+                bar.set_message(&format!("{}",r.rate.resets_in()));
+                bar.set_position(r.rate.limit - r.rate.remaining);
+                bar.set_style(ProgressStyle::default_bar()
+                   .template(&format!("{{prefix:.bold}} {{pos:.{}}} {{wide_bar:.{}}} of {{len}} resets in {{msg:.{}}} ", self.rate_color(), "yellow", self.message_color()))
+                   .progress_chars(" \u{15E7}\u{FF65}"));
+            }
+        }
+    }
+
+    pub fn start(args : cli::Options) {
+        let m = Monitor::new(args);
+        m.start_ticker();
+    }
+
+    fn rate_color(&self) -> &'static str {
+        if let Some(ref r) = self.state.read().rate_limit {
+            match (r.rate.remaining as f64) / (r.rate.limit as f64) {
+                x if x <= 0.08 => "red",
+                x if x <= 0.5 => "yellow",
+                _ => "green"
+            }
+        }
+        else {
+            "white"
+        }
+    }
+
+    fn message_color(&self) -> &'static str {
+        if let Some(ref r) = self.state.read().rate_limit {
+            match r.rate.resets_in() {
+                x if x < 120 => "green",
+                _ => "white"
+            }
+        }
+        else {
+            "white"
+        }
     }
 }
