@@ -1,19 +1,17 @@
-use std::io::{self, Write};
+use std::io;
 
 use futures::{Future, Stream};
 use hyper::Client;
-use hyper::header::{Headers, Authorization, UserAgent, Bearer, Basic};
+use hyper::header::{Authorization, UserAgent, Bearer, Basic};
 use hyper_tls::HttpsConnector;
 use tokio_core::reactor::Core;
-use serde_json::Value;
 
 use hyper;
 use serde_json;
 
-use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use std::result::{self, Result as R};
+use std::result::{Result as R};
 use failure::Error;
 
 #[derive(Debug)]
