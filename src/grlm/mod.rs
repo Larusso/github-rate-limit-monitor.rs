@@ -10,6 +10,7 @@ use indicatif::ProgressStyle;
 
 use parking_lot::{RwLock};
 
+use std::thread;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -73,6 +74,7 @@ impl Monitor {
                    .template(&format!("{{prefix:.bold}} {{pos:.{}}} {{wide_bar:.{}}} of {{len}} resets in {{msg:.{}}} ", self.rate_color(), "yellow", self.message_color()))
                    .progress_chars(" \u{15E7}\u{FF65}"));
             }
+            thread::sleep(Duration::from_millis(1000/30));
         }
     }
 

@@ -45,8 +45,13 @@ pub struct RateLimit {
 
 impl RateLimit {
     pub fn resets_in(&self) -> i64 {
-        let utc_secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
-        self.reset as i64 - utc_secs
+        if self.remaining == self.limit {
+            self.remaining as i64
+        }
+        else {
+            let utc_secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+            self.reset as i64 - utc_secs
+        }
     }
 }
 
