@@ -17,7 +17,7 @@ const USAGE: &'static str = "
 grlm - github rate limit monitor
 
 Usage:
-  grlm [(-l <user> -p <password> | -t <token>)] [-f <frequency>]
+  grlm [(-l <user> -p <password> | -t <token>)] [-f <frequency>] [-r <resource>]
   grlm --version
   grlm -h | --help
 
@@ -26,6 +26,8 @@ Options:
   -p <password>, --password <password>     the user password
   -t <token>, --access-token <token>       an github accesstoken
   -f <frequency>, --frequency <frequency>  refresh freqency [default: 10]
+  -r <resource>, --resource <resource>     define which github resource to show
+                                           Valid values: core, search, graphql [default: core]
   -V, --version                            print version
   -h, --help                               show this help message and exit
 ";

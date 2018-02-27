@@ -36,7 +36,7 @@ pub struct GithubRateLimit {
     pub graphql: RateLimit
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RateLimit {
     pub limit: u64,
     pub remaining: u64,

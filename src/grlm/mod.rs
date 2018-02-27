@@ -1,8 +1,8 @@
 mod github;
 
 pub mod cli;
-
-use self::github::{AuthType, RateLimitResult, fetch_rate_limit};
+use self::cli::Resource;
+use self::github::{AuthType, RateLimitResult, RateLimit, fetch_rate_limit};
 
 use indicatif::ProgressBar;
 use indicatif::ProgressDrawTarget;
@@ -19,6 +19,7 @@ struct MonitorState {
     rate_limit: Option<RateLimitResult>,
     poll_frequency: u64,
     auth: AuthType,
+    resource: Resource,
 }
 
 pub struct Monitor {
@@ -29,6 +30,7 @@ impl Monitor {
     fn new(args : cli::Options) -> Monitor {
         let f = args.frequency;
         let auth = args.auth;
+        let resource = args.resource;
         let initial_length = match auth {
             AuthType::Anonymos => 60,
             _ => 5000,
@@ -39,13 +41,14 @@ impl Monitor {
             .template(&format!("{{prefix:.bold}} {{pos}} {{wide_bar:.{}}} of {{len}} {{msg.{}}} ", "yellow", "yellow"))
             .progress_chars(" \u{15E7}\u{FF65}"));
 
-        bar.set_prefix("Requests");
+        bar.set_prefix(&format!("Requests {}:", resource));
         Monitor {
             state: Arc::new(RwLock::new(MonitorState {
                 bar: bar,
                 rate_limit: None,
                 poll_frequency: f,
                 auth: auth,
+                resource: resource,
             })),
         }
     }
@@ -66,13 +69,19 @@ impl Monitor {
                 instant = Instant::now();
             }
             if let Some(ref r) = self.state.read().rate_limit {
+                let rate = match self.state.read().resource {
+                    Resource::Core => &r.resources.core,
+                    Resource::Search => &r.resources.search,
+                    Resource::Graphql => &r.resources.graphql,
+                };
+
                 let ref bar = self.state.read().bar;
-                bar.set_length(r.rate.limit);
-                bar.set_message(&format!("{}",r.rate.resets_in()));
-                bar.set_position(r.rate.limit - r.rate.remaining);
+                bar.set_length(rate.limit);
+                bar.set_message(&format!("{}",rate.resets_in()));
+                bar.set_position(rate.limit - rate.remaining);
                 bar.set_style(ProgressStyle::default_bar()
-                   .template(&format!("{{prefix:.bold}} {{pos:.{}}} {{wide_bar:.{}}} of {{len}} resets in {{msg:.{}}} ", self.rate_color(), "yellow", self.message_color()))
-                   .progress_chars(self.progress_chars()));
+                   .template(&format!("{{prefix:.bold}} {{pos:.{}}} {{wide_bar:.{}}} of {{len}} resets in {{msg:.{}}} ", self.rate_color(rate), "yellow", self.message_color(rate)))
+                   .progress_chars(self.progress_chars(rate)));
             }
             thread::sleep(Duration::from_millis(1000/30));
         }
@@ -83,40 +92,25 @@ impl Monitor {
         m.start_ticker();
     }
 
-    fn progress_chars(&self) -> &'static str {
-        if let Some(ref r) = self.state.read().rate_limit {
-            match r.rate.remaining {
-                x if x == 0 => "#####",
-                _ => " \u{15E7}\u{FF65}",
-            }
-        }
-        else {
-            " \u{15E7}\u{FF65}"
+    fn progress_chars(&self, r : &RateLimit) -> &'static str {
+        match r.remaining {
+            x if x == 0 => "#####",
+            _ => " \u{15E7}\u{FF65}",
         }
     }
 
-    fn rate_color(&self) -> &'static str {
-        if let Some(ref r) = self.state.read().rate_limit {
-            match (r.rate.remaining as f64) / (r.rate.limit as f64) {
-                x if x <= 0.08 => "red",
-                x if x <= 0.5 => "yellow",
-                _ => "green"
-            }
-        }
-        else {
-            "white"
+    fn rate_color(&self, r : &RateLimit) -> &'static str {
+        match (r.remaining as f64) / (r.limit as f64) {
+            x if x <= 0.08 => "red",
+            x if x <= 0.5 => "yellow",
+            _ => "green"
         }
     }
 
-    fn message_color(&self) -> &'static str {
-        if let Some(ref r) = self.state.read().rate_limit {
-            match r.rate.resets_in() {
-                x if x < 120 => "green",
-                _ => "white"
-            }
-        }
-        else {
-            "white"
+    fn message_color(&self, r : &RateLimit) -> &'static str {
+        match r.resets_in() {
+            x if x < 120 => "green",
+            _ => "white"
         }
     }
 }
