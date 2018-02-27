@@ -72,7 +72,7 @@ impl Monitor {
                 bar.set_position(r.rate.limit - r.rate.remaining);
                 bar.set_style(ProgressStyle::default_bar()
                    .template(&format!("{{prefix:.bold}} {{pos:.{}}} {{wide_bar:.{}}} of {{len}} resets in {{msg:.{}}} ", self.rate_color(), "yellow", self.message_color()))
-                   .progress_chars(" \u{15E7}\u{FF65}"));
+                   .progress_chars(self.progress_chars()));
             }
             thread::sleep(Duration::from_millis(1000/30));
         }
@@ -81,6 +81,18 @@ impl Monitor {
     pub fn start(args : cli::Options) {
         let m = Monitor::new(args);
         m.start_ticker();
+    }
+
+    fn progress_chars(&self) -> &'static str {
+        if let Some(ref r) = self.state.read().rate_limit {
+            match r.rate.remaining {
+                x if x == 0 => "#####",
+                _ => " \u{15E7}\u{FF65}",
+            }
+        }
+        else {
+            " \u{15E7}\u{FF65}"
+        }
     }
 
     fn rate_color(&self) -> &'static str {
