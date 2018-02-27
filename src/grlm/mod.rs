@@ -26,6 +26,30 @@ pub struct Monitor {
     state: Arc<RwLock<MonitorState>>,
 }
 
+impl RateLimit {
+    fn progress_chars(&self) -> &'static str {
+        match self.remaining {
+            x if x == 0 => "#####",
+            _ => " \u{15E7}\u{FF65}",
+        }
+    }
+
+    fn rate_color(&self) -> &'static str {
+        match (self.remaining as f64) / (self.limit as f64) {
+            x if x <= 0.08 => "red",
+            x if x <= 0.5 => "yellow",
+            _ => "green"
+        }
+    }
+
+    fn message_color(&self) -> &'static str {
+        match self.resets_in() {
+            x if x < 120 => "green",
+            _ => "white"
+        }
+    }
+}
+
 impl Monitor {
     fn new(args : cli::Options) -> Monitor {
         let f = args.frequency;
@@ -80,8 +104,8 @@ impl Monitor {
                 bar.set_message(&format!("{}",rate.resets_in()));
                 bar.set_position(rate.limit - rate.remaining);
                 bar.set_style(ProgressStyle::default_bar()
-                   .template(&format!("{{prefix:.bold}} {{pos:.{}}} {{wide_bar:.{}}} of {{len}} resets in {{msg:.{}}} ", self.rate_color(rate), "yellow", self.message_color(rate)))
-                   .progress_chars(self.progress_chars(rate)));
+                   .template(&format!("{{prefix:.bold}} {{pos:.{}}} {{wide_bar:.{}}} of {{len}} resets in {{msg:.{}}} ", rate.rate_color(), "yellow", rate.message_color()))
+                   .progress_chars(rate.progress_chars()));
             }
             thread::sleep(Duration::from_millis(1000/30));
         }
@@ -90,27 +114,5 @@ impl Monitor {
     pub fn start(args : cli::Options) {
         let m = Monitor::new(args);
         m.start_ticker();
-    }
-
-    fn progress_chars(&self, r : &RateLimit) -> &'static str {
-        match r.remaining {
-            x if x == 0 => "#####",
-            _ => " \u{15E7}\u{FF65}",
-        }
-    }
-
-    fn rate_color(&self, r : &RateLimit) -> &'static str {
-        match (r.remaining as f64) / (r.limit as f64) {
-            x if x <= 0.08 => "red",
-            x if x <= 0.5 => "yellow",
-            _ => "green"
-        }
-    }
-
-    fn message_color(&self, r : &RateLimit) -> &'static str {
-        match r.resets_in() {
-            x if x < 120 => "green",
-            _ => "white"
-        }
     }
 }
