@@ -2,6 +2,7 @@ use grlm::AuthType;
 
 use docopt::Docopt;
 use std::fmt;
+use libc;
 
 #[derive(Debug, Deserialize)]
 struct Arguments {
@@ -10,6 +11,7 @@ struct Arguments {
     flag_access_token: String,
     flag_frequency: u64,
     flag_version: bool,
+    flag_short: bool,
     flag_resource: Resource,
 }
 
@@ -45,6 +47,11 @@ pub struct Options {
     pub frequency: u64,
     pub auth: AuthType,
     pub resource: Resource,
+}
+
+fn is_tty() -> bool {
+    let tty = unsafe { libc::isatty(libc::STDOUT_FILENO as i32) } != 0;
+    tty
 }
 
 pub fn get_options(usage: &str) -> Option<Options> {

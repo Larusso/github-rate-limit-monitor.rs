@@ -101,10 +101,10 @@ impl Monitor {
 
                 let ref bar = self.state.read().bar;
                 bar.set_length(rate.limit);
-                bar.set_message(&format!("{}",rate.resets_in()));
+                bar.set_message(&format!("resets in {}",rate.resets_in()));
                 bar.set_position(rate.limit - rate.remaining);
                 bar.set_style(ProgressStyle::default_bar()
-                   .template(&format!("{{prefix:.bold}} {{pos:.{}}} {{wide_bar:.{}}} of {{len}} resets in {{msg:.{}}} ", rate.rate_color(), "yellow", rate.message_color()))
+                   .template(&format!("{{prefix:.bold}} {{pos:.{}}} {{wide_bar:.{}}} of {{len}} {{msg:.{}}} ", rate.rate_color(), "yellow", rate.message_color()))
                    .progress_chars(rate.progress_chars()));
             }
             thread::sleep(Duration::from_millis(1000/30));

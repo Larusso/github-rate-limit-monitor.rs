@@ -9,6 +9,7 @@ extern crate tokio_core;
 extern crate failure;
 extern crate indicatif;
 extern crate parking_lot;
+extern crate libc;
 
 
 mod grlm;
@@ -17,7 +18,7 @@ const USAGE: &'static str = "
 grlm - github rate limit monitor
 
 Usage:
-  grlm [(-l <user> -p <password> | -t <token>)] [-f <frequency>] [-r <resource>]
+  grlm [(-l <user> -p <password> | -t <token>)] [options]
   grlm --version
   grlm -h | --help
 
@@ -28,6 +29,7 @@ Options:
   -f <frequency>, --frequency <frequency>  refresh freqency [default: 10]
   -r <resource>, --resource <resource>     define which github resource to show
                                            Valid values: core, search, graphql [default: core]
+  --short                                  display rate limit in short format.
   -V, --version                            print version
   -h, --help                               show this help message and exit
 ";
