@@ -1,8 +1,9 @@
 use grlm::AuthType;
 
 use docopt::Docopt;
-use std::fmt;
 use libc;
+use std::convert::From;
+use std::fmt;
 
 #[derive(Debug, Deserialize)]
 struct Arguments {
@@ -28,25 +29,40 @@ impl fmt::Display for Resource {
     }
 }
 
-impl Arguments {
-    fn to_arguments(&self) -> Options {
-        if !self.flag_access_token.is_empty() {
-            Options {resource: self.flag_resource.clone(), frequency: self.flag_frequency, auth: AuthType::Token(self.flag_access_token.clone())}
-        }
-        else if !self.flag_login.is_empty() {
-            Options {resource: self.flag_resource.clone(), frequency: self.flag_frequency, auth: AuthType::Login {login: self.flag_login.clone(), password: self.flag_password.clone()}}
-        }
-        else {
-            Options {resource: self.flag_resource.clone(), frequency: self.flag_frequency, auth: AuthType::Anonymos}
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct Options {
     pub frequency: u64,
     pub auth: AuthType,
     pub resource: Resource,
+}
+
+impl From<Arguments> for Options {
+    fn from(item: Arguments) -> Self {
+      if !item.flag_access_token.is_empty() {
+            Options {
+              resource: item.flag_resource.clone(),
+              frequency: item.flag_frequency,
+              auth: AuthType::Token(item.flag_access_token.clone())
+            }
+        }
+        else if !item.flag_login.is_empty() {
+            Options {
+              resource: item.flag_resource.clone(),
+              frequency: item.flag_frequency,
+              auth: AuthType::Login {
+                login: item.flag_login.clone(),
+                password: item.flag_password.clone()
+              }
+            }
+        }
+        else {
+            Options {
+              resource: item.flag_resource.clone(),
+              frequency: item.flag_frequency,
+              auth: AuthType::Anonymos
+            }
+        }
+    }
 }
 
 fn is_tty() -> bool {
@@ -65,5 +81,5 @@ pub fn get_options(usage: &str) -> Option<Options> {
                               .and_then(|d| Ok(d.version(Some(version))))
                               .and_then(|d| d.deserialize())
                               .unwrap_or_else(|e| e.exit());
-    Some(args.to_arguments())
+    Some(args.into())
 }
