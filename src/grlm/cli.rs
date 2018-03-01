@@ -7,11 +7,10 @@ use std::fmt;
 
 #[derive(Debug, Deserialize)]
 struct Arguments {
-    flag_login: String,
-    flag_password: String,
-    flag_access_token: String,
+    flag_login: Option<String>,
+    flag_password: Option<String>,
+    flag_access_token: Option<String>,
     flag_frequency: u64,
-    flag_version: bool,
     flag_short: bool,
     flag_resource: Resource,
 }
@@ -34,33 +33,29 @@ pub struct Options {
     pub frequency: u64,
     pub auth: AuthType,
     pub resource: Resource,
+    pub is_tty: bool,
 }
 
 impl From<Arguments> for Options {
     fn from(item: Arguments) -> Self {
-      if !item.flag_access_token.is_empty() {
-            Options {
-              resource: item.flag_resource.clone(),
-              frequency: item.flag_frequency,
-              auth: AuthType::Token(item.flag_access_token.clone())
-            }
-        }
-        else if !item.flag_login.is_empty() {
-            Options {
-              resource: item.flag_resource.clone(),
-              frequency: item.flag_frequency,
-              auth: AuthType::Login {
-                login: item.flag_login.clone(),
-                password: item.flag_password.clone()
-              }
-            }
-        }
-        else {
-            Options {
-              resource: item.flag_resource.clone(),
-              frequency: item.flag_frequency,
-              auth: AuthType::Anonymos
-            }
+        let auth = match item {
+            Arguments { flag_access_token: Some(token), .. } => {
+                AuthType::Token(token)
+            },
+            Arguments { flag_login: Some(login), flag_password: Some(password), ..} => {
+                AuthType::Login {
+                    login: login,
+                    password: password
+                }
+            },
+            _ => AuthType::Anonymos
+        };
+
+        Options {
+          resource: item.flag_resource,
+          frequency: item.flag_frequency,
+          auth: auth,
+          is_tty: is_tty(),
         }
     }
 }
