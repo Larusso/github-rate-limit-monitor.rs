@@ -1,4 +1,4 @@
-use grlm::AuthType;
+use github::AuthType;
 
 use docopt::Docopt;
 use libc;

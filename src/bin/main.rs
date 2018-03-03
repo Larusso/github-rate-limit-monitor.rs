@@ -1,18 +1,4 @@
-#[macro_use]
-extern crate serde_derive;
-extern crate serde_json;
-extern crate docopt;
-extern crate futures;
-extern crate hyper;
-extern crate hyper_tls;
-extern crate tokio_core;
-extern crate failure;
-extern crate indicatif;
-extern crate parking_lot;
-extern crate libc;
-
-
-mod grlm;
+extern crate grlm;
 
 const USAGE: &'static str = "
 grlm - github rate limit monitor

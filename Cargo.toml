@@ -3,10 +3,19 @@ name = "grlm"
 version = "0.1.0"
 authors = ["Manfred Endres <manfred.endres@tslarusso.de>"]
 
+[[bin]]
+name = "grlm"
+path = "src/bin/main.rs"
+doc = false
+
+[lib]
+name = "grlm"
+path = "src/grlm.rs"
+
 [dependencies]
 docopt = "0.8"
-serde = "1.0" # if you're using `derive(Deserialize)`
-serde_derive = "1.0" # if you're using `derive(Deserialize)`
+serde = "1.0"
+serde_derive = "1.0"
 serde_json = "1.0"
 futures = "0.1"
 hyper = "0.11"
